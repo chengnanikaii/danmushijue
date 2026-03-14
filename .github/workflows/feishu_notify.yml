@@ -4,46 +4,52 @@ on: [push]
 jobs:
   notify:
     runs-on: ubuntu-latest
+    env:
+      # 兼容Node.js新版本，解决废弃警告
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
-      - name: 发送飞书通知
-        uses: actions/checkout@v4
-      - name: 构建通知内容
-        id: build
+      - uses: actions/checkout@v4
+
+      - name: 安全处理提交信息（彻底解决特殊字符报错）
+        id: safe_build
         run: |
-          COMMIT_MSG=$(git log -1 --pretty=%B)
-          COMMIT_AUTHOR=$(git log -1 --pretty=%an)
+          # 自动转义所有特殊字符、引号、换行，100%避免JSON格式错误
+          SAFE_COMMIT_MSG=$(git log -1 --pretty=%B | jq -Rsa . | sed 's/^"//' | sed 's/"$//')
+          SAFE_COMMIT_AUTHOR=$(git log -1 --pretty=%an | jq -Rsa . | sed 's/^"//' | sed 's/"$//')
           COMMIT_URL="https://github.com/${{ github.repository }}/commit/${{ github.sha }}"
-          echo "commit_msg<<EOF" >> $GITHUB_OUTPUT
-          echo "$COMMIT_MSG" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-          echo "commit_author=$COMMIT_AUTHOR" >> $GITHUB_OUTPUT
+          
+          echo "safe_msg=$SAFE_COMMIT_MSG" >> $GITHUB_OUTPUT
+          echo "safe_author=$SAFE_COMMIT_AUTHOR" >> $GITHUB_OUTPUT
           echo "commit_url=$COMMIT_URL" >> $GITHUB_OUTPUT
-      - name: 调用飞书Webhook
+
+      - name: 发送飞书群通知
         uses: fjogeleit/http-request-action@v1
         with:
           url: ${{ secrets.FEISHU_WEBHOOK }}
-          method: 'POST'
-          data: |
+          method: POST
+          contentType: application/json
+          # 彻底避免yaml缩进导致的JSON错误
+          data: >-
             {
               "msg_type": "post",
               "content": {
                 "post": {
                   "zh_cn": {
-                    "title": "🚀 代码有新更新！",
+                    "title": "🚀 单目视觉项目代码更新",
                     "content": [
                       [
                         {
                           "tag": "text",
-                          "text": "提交者：${{ steps.build.outputs.commit_author }}\n"
+                          "text": "提交者：${{ steps.safe_build.outputs.safe_author }}\n"
                         },
                         {
                           "tag": "text",
-                          "text": "提交说明：${{ steps.build.outputs.commit_msg }}\n"
+                          "text": "提交说明：${{ steps.safe_build.outputs.safe_msg }}\n"
                         },
                         {
                           "tag": "a",
                           "text": "👉 点击查看代码变更",
-                          "href": "${{ steps.build.outputs.commit_url }}"
+                          "href": "${{ steps.safe_build.outputs.commit_url }}"
                         }
                       ]
                     ]
