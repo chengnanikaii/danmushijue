@@ -1,0 +1,53 @@
+name: 飞书代码推送通知
+on: [push]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 发送飞书通知
+        uses: actions/checkout@v4
+      - name: 构建通知内容
+        id: build
+        run: |
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+          COMMIT_AUTHOR=$(git log -1 --pretty=%an)
+          COMMIT_URL="https://github.com/${{ github.repository }}/commit/${{ github.sha }}"
+          echo "commit_msg<<EOF" >> $GITHUB_OUTPUT
+          echo "$COMMIT_MSG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "commit_author=$COMMIT_AUTHOR" >> $GITHUB_OUTPUT
+          echo "commit_url=$COMMIT_URL" >> $GITHUB_OUTPUT
+      - name: 调用飞书Webhook
+        uses: fjogeleit/http-request-action@v1
+        with:
+          url: ${{ secrets.FEISHU_WEBHOOK }}
+          method: 'POST'
+          data: |
+            {
+              "msg_type": "post",
+              "content": {
+                "post": {
+                  "zh_cn": {
+                    "title": "🚀 代码有新更新！",
+                    "content": [
+                      [
+                        {
+                          "tag": "text",
+                          "text": "提交者：${{ steps.build.outputs.commit_author }}\n"
+                        },
+                        {
+                          "tag": "text",
+                          "text": "提交说明：${{ steps.build.outputs.commit_msg }}\n"
+                        },
+                        {
+                          "tag": "a",
+                          "text": "👉 点击查看代码变更",
+                          "href": "${{ steps.build.outputs.commit_url }}"
+                        }
+                      ]
+                    ]
+                  }
+                }
+              }
+            }
